@@ -1,0 +1,302 @@
+<!-- =============================
+PAIRWISE VOTING SITE (STATIC, GITHUB PAGES) 
+Two pages: index.html (voting) and results.html (live leaderboard)
+Persistence via Firebase Firestore (realtime). No server needed.
+
+INSTRUCTIONS (quick):
+1) Create a new public GitHub repo. Enable GitHub Pages (Settings → Pages → Deploy from branch → main → /root).
+2) In Firebase console: create a project → Firestore Database (production mode is fine) → copy web app config.
+3) In Firestore, create a collection "players" (you can leave it empty; the UI lets you add/remove later). Optionally create a collection "votes" (not required; used only for analytics).
+4) In Firestore Rules, start SIMPLE for a friends-only event (see the rules snippet at bottom of this file). For real use, harden rules.
+5) Put these two files (index.html, results.html) in repo root. Commit & push. Share https://<your-username>.github.io/<repo> for voting (index) and /results.html for leaderboard.
+
+SECURITY NOTE: This is intentionally lightweight for a casual event (open, anonymous). Anyone with the link can vote. Abuse protections are minimal.
+============================= -->
+
+<!-- =============================
+File: index.html  (Voting page)
+============================= -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Who Would Win? — Vote</title>
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <style>
+    :root { --bg:#0b1020; --card:#121a35; --muted:#93a1c8; --text:#e6e9f5; --accent:#5cc8ff; }
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial; background:linear-gradient(180deg,#0b1020,#0e1530); color:var(--text);} 
+    .wrap{max-width:900px;margin:0 auto;padding:24px}
+    header{display:flex;gap:16px;align-items:center;justify-content:space-between}
+    header a{color:var(--accent);text-decoration:none}
+    h1{font-size:28px;margin:8px 0}
+    .card{background:var(--card); border:1px solid #1f2b55; border-radius:18px; padding:18px; box-shadow:0 8px 30px rgba(0,0,0,.3)}
+    .row{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:12px}
+    .btn{display:block; padding:28px 18px; text-align:center; font-weight:700; font-size:22px; border-radius:16px; background:#1a2650; color:var(--text); border:1px solid #2a3c7a; cursor:pointer; transition:.15s transform ease, .15s filter ease}
+    .btn:hover{transform:translateY(-2px)}
+    .btn:active{transform:translateY(0)}
+    .small{font-size:13px; color:var(--muted)}
+    .admin{margin-top:22px; display:grid; grid-template-columns:1fr auto; gap:8px}
+    input, button {font:inherit}
+    input{padding:12px;border-radius:12px;border:1px solid #294083;background:#0f1633;color:var(--text)}
+    .danger{background:#3a1630;border-color:#7a2a5a}
+    .tag{display:inline-block;padding:6px 10px;border-radius:10px;background:#0a1535;border:1px solid #19326b;margin:4px 6px 0 0;font-size:13px}
+    .muted{color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Who Would Win? <span class="small">(Vote)</span></h1>
+        <div class="small">Pick the winner between two random names. Votes update the live ranking instantly.</div>
+      </div>
+      <nav><a href="results.html">View Results →</a></nav>
+    </header>
+
+    <div class="card" id="voteCard" hidden>
+      <div class="small" id="roundInfo"></div>
+      <div class="row">
+        <button id="leftBtn"  class="btn">Loading…</button>
+        <button id="rightBtn" class="btn">Loading…</button>
+      </div>
+      <div class="small" style="margin-top:8px">New pair appears after each vote. Endless play. 💫</div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="small" style="margin-bottom:8px">Add or remove names (admin-lite). For a casual event only.</div>
+      <div class="admin">
+        <input id="newName" placeholder="Add name (e.g., Alice)" />
+        <button id="addBtn">Add</button>
+      </div>
+      <div id="nameList" style="margin-top:10px" class="small muted">Loading…</div>
+    </div>
+
+    <p class="small" style="margin-top:14px">Tip: Share this page with friends to collect votes. For the leaderboard, send them <a href="results.html">results.html</a>.</p>
+  </div>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
+
+  <script type="module">
+    // ===== 1) INSERT YOUR FIREBASE CONFIG HERE =====
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT.firebaseapp.com",
+      projectId: "YOUR_PROJECT",
+      storageBucket: "YOUR_PROJECT.appspot.com",
+      messagingSenderId: "",
+      appId: ""
+    };
+    // Optional: eventId namespace if you plan to run multiple polls in one project
+    const EVENT_ID = 'default';
+
+    // ===== 2) Init =====
+    const app = firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const playersRef = db.collection('players');
+
+    // ===== 3) Helpers =====
+    const K = 32; // Elo K-factor
+    function expectedScore(rA, rB){ return 1/(1+Math.pow(10, (rB-rA)/400)); }
+    function elo(rA, rB, scoreA){
+      const eA = expectedScore(rA,rB); const eB = 1-eA; // symmetric
+      return [ rA + K*(scoreA - eA), rB + K*((1-scoreA) - eB) ];
+    }
+    function pickTwo(arr){
+      if(arr.length < 2) return [];
+      const i = Math.floor(Math.random()*arr.length);
+      let j = Math.floor(Math.random()*arr.length);
+      if(j===i) j = (j+1)%arr.length;
+      return [arr[i], arr[j]];
+    }
+
+    // ===== 4) UI Elements =====
+    const leftBtn = document.getElementById('leftBtn');
+    const rightBtn = document.getElementById('rightBtn');
+    const voteCard = document.getElementById('voteCard');
+    const roundInfo = document.getElementById('roundInfo');
+
+    const nameListDiv = document.getElementById('nameList');
+    const addBtn = document.getElementById('addBtn');
+    const newNameInput = document.getElementById('newName');
+
+    let active = []; // cached players
+    let currentPair = null;
+    let round = 0;
+
+    // ===== 5) Live list + admin-lite =====
+    playersRef.where('active','==', true).orderBy('rating','desc').onSnapshot(snap => {
+      active = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      if(active.length>=2){ voteCard.hidden = false; if(!currentPair) nextPair(); }
+      renderNames();
+    });
+
+    function renderNames(){
+      if(!active.length){ nameListDiv.textContent = 'No names yet. Add a few below.'; return; }
+      nameListDiv.innerHTML = '';
+      active.forEach(p => {
+        const tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.textContent = `${p.name} • ${p.rating.toFixed(0)} ELO`;
+        const rm = document.createElement('button');
+        rm.textContent = '×';
+        rm.className = 'tag danger';
+        rm.style.marginLeft = '6px';
+        rm.onclick = async () => {
+          await playersRef.doc(p.id).update({active:false});
+        };
+        const wrap = document.createElement('span'); wrap.appendChild(tag); wrap.appendChild(rm);
+        nameListDiv.appendChild(wrap);
+      });
+    }
+
+    addBtn.onclick = async () => {
+      const name = newNameInput.value.trim();
+      if(!name) return;
+      const existing = await playersRef.where('name','==',name).limit(1).get();
+      if(!existing.empty){ alert('That name already exists.'); return; }
+      await playersRef.add({
+        eventId: EVENT_ID,
+        name,
+        rating: 1000,
+        wins: 0,
+        losses: 0,
+        active: true,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      newNameInput.value='';
+    };
+
+    // ===== 6) Voting flow =====
+    async function nextPair(){
+      currentPair = pickTwo(active);
+      if(currentPair.length<2){ leftBtn.textContent = rightBtn.textContent = 'Add at least 2 names'; return; }
+      round++;
+      roundInfo.textContent = `Round ${round}`;
+      leftBtn.textContent = currentPair[0].name;
+      rightBtn.textContent = currentPair[1].name;
+    }
+
+    async function vote(idx){
+      if(!currentPair) return;
+      const A = currentPair[idx];
+      const B = currentPair[1-idx];
+      await db.runTransaction(async (tx) => {
+        const aRef = playersRef.doc(A.id); const bRef = playersRef.doc(B.id);
+        const aDoc = await tx.get(aRef); const bDoc = await tx.get(bRef);
+        const a = aDoc.data(); const b = bDoc.data();
+        const [newA, newB] = elo(a.rating, b.rating, 1); // A wins
+        tx.update(aRef, { rating:newA, wins:(a.wins||0)+1 });
+        tx.update(bRef, { rating:newB, losses:(b.losses||0)+1 });
+        // Optional: record a vote (omitted here to keep write volume small)
+      });
+      nextPair();
+    }
+
+    leftBtn.onclick = () => vote(0);
+    rightBtn.onclick = () => vote(1);
+  </script>
+</body>
+</html>
+
+
+<!-- =============================
+File: results.html  (Live leaderboard)
+============================= -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Who Would Win? — Results</title>
+  <style>
+    :root { --bg:#0b1020; --card:#121a35; --muted:#93a1c8; --text:#e6e9f5; --accent:#5cc8ff; }
+    body{margin:0;font-family:system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial; background:linear-gradient(180deg,#0b1020,#0e1530); color:var(--text);} 
+    .wrap{max-width:900px;margin:0 auto;padding:24px}
+    header{display:flex;align-items:center;justify-content:space-between}
+    header a{color:var(--accent);text-decoration:none}
+    h1{font-size:28px;margin:8px 0}
+    .table{width:100%;border-collapse:separate;border-spacing:0 10px}
+    .row{background:var(--card); border:1px solid #1f2b55; border-radius:14px; padding:10px}
+    .row td{padding:12px 14px}
+    .muted{color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Who Would Win? <span class="muted">(Results)</span></h1>
+        <div class="muted">Live ELO ranking. Updates immediately after every vote.</div>
+      </div>
+      <nav><a href="./">← Back to voting</a></nav>
+    </header>
+
+    <table class="table" id="board"></table>
+  </div>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
+
+  <script type="module">
+    // Same config as index.html
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT.firebaseapp.com",
+      projectId: "YOUR_PROJECT",
+      storageBucket: "YOUR_PROJECT.appspot.com",
+      messagingSenderId: "",
+      appId: ""
+    };
+    const EVENT_ID = 'default';
+    const app = firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const playersRef = db.collection('players');
+
+    const board = document.getElementById('board');
+
+    function render(rows){
+      board.innerHTML = '';
+      const header = document.createElement('tr');
+      header.className = 'row';
+      header.innerHTML = `<td>#</td><td>Name</td><td>ELO</td><td>W-L</td>`;
+      board.appendChild(header);
+      rows.forEach((p, i) => {
+        const tr = document.createElement('tr');
+        tr.className = 'row';
+        tr.innerHTML = `<td>${i+1}</td><td>${p.name}</td><td>${p.rating.toFixed(0)}</td><td>${p.wins||0}-${p.losses||0}</td>`;
+        board.appendChild(tr);
+      });
+    }
+
+    playersRef.where('active','==', true).orderBy('rating','desc').onSnapshot(snap => {
+      const rows = snap.docs.map(d => d.data());
+      render(rows);
+    });
+  </script>
+</body>
+</html>
+
+
+<!-- =============================
+FIRESTORE SECURITY RULES (casual event)
+============================= -->
+<!-- 
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      // Read: public
+      allow read: if true;
+      // Write: public but rate-limited by Firestore itself; good enough for small friend group
+      allow write: if true;
+    }
+  }
+}
+
+// Optional: if you want a simple namespace for this event only, require eventId == 'default' on writes:
+// (Still public; security-by-convention only.)
+// allow write: if request.resource.data.keys().hasAll(['eventId']) && request.resource.data.eventId == 'default';
+-->
