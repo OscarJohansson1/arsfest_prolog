@@ -7,76 +7,177 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
+  /* Orienteering-map palette: paper, forest ink, control-circle magenta, water blue, flag orange */
   :root {
-    --bg: #eef0f4; --surface: #ffffff; --text: #12141c; --muted: #6b7080;
-    --line: #d9dce4; --accent: #3a2bff; --accent-text: #ffffff;
+    --bg: #f4efd3; --surface: #fffdf2; --text: #1d2b21; --muted: #6b7664;
+    --line: #cfc496; --accent: #c8187f; --accent-text: #ffffff;
+    --water: #46acdc; --green: #74c05c; --flag: #ff6a13;
+    --contour: rgba(184, 121, 63, 0.24);
+    --mono: "DM Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #0f1118; --surface: #181b25; --text: #eceef5; --muted: #8b90a3;
-      --line: #2a2e3d; --accent: #8a80ff; --accent-text: #0f1118;
+      --bg: #0e1f18; --surface: #15291f; --text: #eef3e6; --muted: #92a58f;
+      --line: #2c4a3a; --accent: #ff4db8; --accent-text: #1a0612;
+      --water: #2a7fb0; --green: #4f9a45; --flag: #ff8a3d;
+      --contour: rgba(120, 160, 100, 0.2);
       color-scheme: dark;
     }
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
   body {
-    background: var(--bg); color: var(--text);
+    position: relative; overflow-x: clip;
+    background-color: var(--bg); color: var(--text);
     font: 17px/1.4 "Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column;
   }
-  h1 {
-    margin: 0; padding: 28px 16px 0; text-align: center;
-    font-size: clamp(1.4rem, 4vw, 2rem); font-weight: 800; letter-spacing: -0.02em;
+  /* Contour lines: three concentric "hills" */
+  body::before {
+    content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      repeating-radial-gradient(circle at 10% 16%, transparent 0 20px, var(--contour) 20px 21.5px),
+      repeating-radial-gradient(circle at 90% 82%, transparent 0 26px, var(--contour) 26px 27.5px),
+      repeating-radial-gradient(circle at 64% 38%, transparent 0 38px, var(--contour) 38px 39px);
   }
-  .count { margin: 6px 0 0; text-align: center; color: var(--muted); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+  body > * { position: relative; z-index: 1; }
+ 
+  /* Compass rose in the corner */
+  .compass { position: fixed; z-index: 0; right: -50px; bottom: -50px; width: 220px; opacity: 0.16; pointer-events: none; animation: spin 120s linear infinite; }
+  .compass * { stroke: var(--text); }
+ 
+  header { text-align: center; padding: 26px 16px 0; }
+  .globe { width: 84px; height: 84px; display: block; margin: 0 auto 6px; }
+  h1 {
+    margin: 0; font-size: clamp(1.9rem, 7vw, 3.3rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1.05;
+    text-shadow: 3px 3px 0 var(--accent);
+  }
+  .sub {
+    display: inline-block; margin-top: 14px; padding: 4px 14px; border-radius: 99px;
+    background: var(--text); color: var(--bg); font: 500 0.8rem var(--mono);
+    letter-spacing: 0.28em; text-transform: uppercase; transform: rotate(-2deg);
+  }
+  .count { margin: 12px 0 0; color: var(--muted); font: 400 0.85rem var(--mono); font-variant-numeric: tabular-nums; }
+  .count span { color: var(--accent); font-weight: 500; }
+ 
+  .ticker {
+    margin: 22px -6px 0; transform: rotate(-1.2deg); overflow: hidden; white-space: nowrap;
+    background: var(--accent); color: var(--accent-text); font: 500 0.8rem var(--mono);
+    letter-spacing: 0.12em; text-transform: uppercase; padding: 6px 0;
+    border-block: 2px solid var(--text);
+  }
+  .track { display: inline-block; animation: ticker 50s linear infinite; }
+  .track span { padding-right: 2.2em; }
+ 
   .stage {
     flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 24px; padding: 32px 16px; min-height: 60vh;
+    gap: 24px; padding: 40px 16px 32px; min-height: 58vh;
   }
-  .prompt { margin: 0; color: var(--muted); }
-  .pair { display: flex; align-items: center; gap: 20px; width: 100%; max-width: 760px; }
-  .vs { color: var(--muted); font-size: 0.9rem; }
+  .prompt { margin: 0; color: var(--muted); font: 400 0.95rem var(--mono); letter-spacing: 0.04em; }
+ 
+  .pair { position: relative; display: flex; align-items: center; gap: 22px; width: 100%; max-width: 780px; }
+  /* Dashed course line between the two controls */
+  .pair::before { content: ""; position: absolute; z-index: 0; left: 0; right: 0; top: 50%; border-top: 3px dashed var(--accent); }
+  .pair > * { position: relative; z-index: 1; }
+  .vs {
+    flex: none; width: 46px; height: 46px; display: grid; place-items: center; border-radius: 50%;
+    background: var(--surface); color: var(--accent); font: 500 0.85rem var(--mono); text-transform: uppercase;
+    box-shadow: 0 0 0 4px var(--surface), 0 0 0 7px var(--accent);
+  }
   .choice {
-    flex: 1; min-height: 160px; padding: 20px; border: 2px solid var(--line); border-radius: 20px;
-    background: var(--surface); color: var(--text); cursor: pointer;
-    font: inherit; font-size: clamp(1.5rem, 5vw, 2.4rem); font-weight: 600; letter-spacing: -0.01em;
-    overflow-wrap: anywhere; transition: border-color .15s, background-color .15s, color .15s, opacity .2s;
+    flex: 1; min-height: 170px; padding: 28px 20px 20px; border: 2px solid var(--text); border-radius: 20px;
+    background: var(--surface); color: var(--text); cursor: pointer; box-shadow: 6px 6px 0 var(--text);
+    font: inherit; font-size: clamp(1.5rem, 5vw, 2.4rem); font-weight: 800; letter-spacing: -0.015em;
+    overflow-wrap: anywhere; transition: transform .12s, box-shadow .12s, background-color .15s, color .15s, opacity .2s;
   }
-  .choice:hover:not(:disabled) { border-color: var(--accent); }
-  .choice.picked { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
+  /* Orienteering symbols: start triangle and finish circle */
+  .choice::before { position: absolute; top: 10px; left: 16px; color: var(--accent); font: 500 1.1rem var(--mono); }
+  #btnA::before { content: "▲"; }
+  #btnB::before { content: "◎"; }
+  .choice:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 8px 8px 0 var(--accent); }
+  .choice:active:not(:disabled) { transform: translate(4px, 4px); box-shadow: 2px 2px 0 var(--text); }
+  .choice.picked { background: var(--accent); color: var(--accent-text); border-color: var(--text); animation: stamp .35s ease-out; }
+  .choice.picked::before { color: var(--accent-text); }
   .choice:disabled { cursor: default; }
-  .pair.busy .choice:not(.picked) { opacity: 0.45; }
+  .pair.busy .choice:not(.picked) { opacity: 0.4; }
+ 
   .skip {
-    border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer;
-    padding: 10px 16px; text-decoration: underline; text-underline-offset: 4px;
+    border: 2px dashed var(--text); border-radius: 99px; background: transparent; color: var(--text);
+    font: 500 0.9rem var(--mono); cursor: pointer; padding: 10px 20px; letter-spacing: 0.04em;
+    transition: background-color .15s, color .15s;
   }
-  .skip:hover:not(:disabled) { color: var(--text); }
+  .skip:hover:not(:disabled) { background: var(--text); color: var(--bg); }
   .skip:disabled { cursor: default; opacity: 0.5; }
-  .choice:focus-visible, .skip:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
-  .note { min-height: 1.4em; margin: 0; color: var(--muted); font-size: 0.9rem; text-align: center; }
-  .board { width: 100%; max-width: 760px; margin: 0 auto; padding: 8px 16px 56px; }
-  .board h2 { margin: 0 0 16px; font-size: 1rem; font-weight: 600; color: var(--muted); text-align: center; }
-  .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  .col { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 20px; }
-  .col h3 { margin: 0 0 8px; font-size: 1rem; font-weight: 800; }
+  .choice:focus-visible, .skip:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+  .note { min-height: 1.4em; margin: 0; color: var(--muted); font: 400 0.85rem var(--mono); text-align: center; }
+ 
+  .board { width: 100%; max-width: 780px; margin: 0 auto; padding: 8px 16px 64px; }
+  .board h2 { margin: 0 0 20px; text-align: center; font: 500 0.85rem var(--mono); letter-spacing: 0.25em; text-transform: uppercase; color: var(--muted); }
+  .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .col { background: var(--surface); border: 2px solid var(--text); border-radius: 18px; box-shadow: 5px 5px 0 var(--text); padding: 16px 18px 10px; }
+  .col h3 { margin: 0 0 8px; font-size: 1.05rem; font-weight: 800; }
   ol { margin: 0; padding: 0; list-style: none; counter-reset: n; }
-  li { counter-increment: n; display: flex; gap: 12px; padding: 6px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
-  li::before { content: counter(n); color: var(--muted); width: 1.2em; flex: none; font-variant-numeric: tabular-nums; }
+  li { counter-increment: n; display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1.5px dashed var(--line); overflow-wrap: anywhere; }
+  /* Rank shown as a control circle */
+  li::before {
+    content: counter(n); flex: none; width: 1.8em; height: 1.8em; display: grid; place-items: center;
+    border: 2px solid var(--accent); border-radius: 50%; color: var(--accent); font: 500 0.75rem var(--mono);
+  }
+  li:first-child::before { background: var(--accent); color: var(--accent-text); }
+ 
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes ticker { to { transform: translateX(-50%); } }
+  @keyframes stamp { 0% { transform: scale(1); } 40% { transform: scale(0.95) rotate(-1deg); } 100% { transform: scale(1); } }
+ 
   @media (max-width: 560px) {
-    .pair { flex-direction: column; gap: 10px; }
-    .choice { width: 100%; min-height: 110px; }
+    .pair { flex-direction: column; gap: 18px; }
+    .pair::before { left: 50%; right: auto; top: 0; bottom: 0; border-top: 0; border-left: 3px dashed var(--accent); }
+    .choice { width: 100%; min-height: 120px; }
     .cols { grid-template-columns: 1fr; }
   }
-  @media (prefers-reduced-motion: reduce) { .choice { transition: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .compass, .track, .choice.picked { animation: none; }
+    .choice { transition: none; }
+  }
 </style>
 </head>
 <body>
-<h1>Årsfest Prolog 2026</h1>
+ 
+<svg class="compass" viewBox="0 0 200 200" fill="none" stroke-width="2" aria-hidden="true">
+  <circle cx="100" cy="100" r="92"/><circle cx="100" cy="100" r="74" stroke-dasharray="3 6"/>
+  <path d="M100 8 L116 100 L100 192 L84 100 Z"/><path d="M8 100 L100 84 L192 100 L100 116 Z"/>
+  <path d="M100 8 L108 100 L100 100 Z" fill="currentColor"/>
+</svg>
+ 
+<header>
+  <svg class="globe" viewBox="0 0 100 100" aria-hidden="true">
+    <circle cx="50" cy="50" r="48" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="2 5" stroke-linecap="round"/>
+    <circle cx="50" cy="50" r="40" fill="var(--water)"/>
+    <path d="M24 38c7-10 18-9 22-1s-5 11-9 17-15 6-17-3z" fill="var(--green)"/>
+    <path d="M56 56c7-4 17 0 19 8s-6 16-13 14-9-16-6-22z" fill="var(--green)"/>
+    <path d="M60 26c6-4 12 0 10 6s-10 5-10-6z" fill="var(--green)"/>
+    <g fill="none" stroke="#fff" stroke-opacity=".75" stroke-width="1.2">
+      <path d="M12 34q38 9 76 0"/><path d="M10 50h80"/><path d="M12 66q38-9 76 0"/>
+      <ellipse cx="50" cy="50" rx="40" ry="40"><animate attributeName="rx" values="40;0;40" dur="9s" repeatCount="indefinite"/></ellipse>
+      <ellipse cx="50" cy="50" rx="40" ry="40"><animate attributeName="rx" values="40;0;40" dur="9s" begin="-3s" repeatCount="indefinite"/></ellipse>
+      <ellipse cx="50" cy="50" rx="40" ry="40"><animate attributeName="rx" values="40;0;40" dur="9s" begin="-6s" repeatCount="indefinite"/></ellipse>
+    </g>
+    <circle cx="50" cy="50" r="40" fill="none" stroke="var(--text)" stroke-width="2.5"/>
+  </svg>
+  <h1>Årsfest Prolog 2026</h1>
+  <div class="sub">Jorden runt</div>
   <p class="count"><span id="total">–</span> tippningar så här långt</p>
+</header>
+ 
+<div class="ticker" aria-hidden="true">
+  <div class="track">
+    <span>Jämjö ✦ London ✦ New York ✦ Rio de Janeiro ✦ Kapstaden ✦ Sydney ✦ Singapore ✦ Seoul ✦ Beijing ✦ Kairo ✦ Rom ✦ Berlin ✦</span><span>Jämjö ✦ London ✦ New York ✦ Rio de Janeiro ✦ Kapstaden ✦ Sydney ✦ Singapore ✦ Seoul ✦ Beijing ✦ Kairo ✦ Rom ✦ Berlin ✦</span>
+  </div>
+</div>
+ 
 <section class="stage">
   <p class="prompt">Vem tror du är snabbast?</p>
   <div class="pair" id="pair">
@@ -102,7 +203,7 @@
   const SUPABASE_URL = "https://ymygsboxvnavdpjklqpr.supabase.co";
   const SUPABASE_KEY = "sb_publishable_Bq--EYS7CxPpoR2wnLissg_KiRoLf9n";
   // -----------------------
-  
+ 
   const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   const $ = id => document.getElementById(id);
   const DELAY_MS = 500;
@@ -169,7 +270,7 @@
     };
     fill("topWomen", true);
     fill("topMen", false);
-    
+ 
     const overall = await db.rpc("get_top_overall");
     if (!overall.error && overall.data) {
       $("topOverall").replaceChildren(...overall.data.sort((x, y) => x.pos - y.pos).map(r => {
@@ -178,7 +279,7 @@
         return li;
       }));
     }
-
+ 
     const total = await db.rpc("get_total_guesses");
     if (!total.error && total.data != null) $("total").textContent = Number(total.data).toLocaleString("sv-SE");
   }
