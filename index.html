@@ -18,7 +18,7 @@
 
     async function load() {
       const { data, error } = await db
-        .from("public.participants")
+        .from("participants")
         .select("id, name, elo, woman")
         .order("elo", { ascending: false });
 
