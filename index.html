@@ -1,34 +1,180 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Leaderboard</title>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Årsfest Prolog 2026</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #eef0f4; --surface: #ffffff; --text: #12141c; --muted: #6b7080;
+    --line: #d9dce4; --accent: #3a2bff; --accent-text: #ffffff;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1118; --surface: #181b25; --text: #eceef5; --muted: #8b90a3;
+      --line: #2a2e3d; --accent: #8a80ff; --accent-text: #0f1118;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 17px/1.4 "Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column;
+  }
+  h1 {
+    margin: 0; padding: 28px 16px 0; text-align: center;
+    font-size: clamp(1.4rem, 4vw, 2rem); font-weight: 800; letter-spacing: -0.02em;
+  }
+  .stage {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 24px; padding: 32px 16px; min-height: 60vh;
+  }
+  .prompt { margin: 0; color: var(--muted); }
+  .pair { display: flex; align-items: center; gap: 20px; width: 100%; max-width: 760px; }
+  .vs { color: var(--muted); font-size: 0.9rem; }
+  .choice {
+    flex: 1; min-height: 160px; padding: 20px; border: 2px solid var(--line); border-radius: 20px;
+    background: var(--surface); color: var(--text); cursor: pointer;
+    font: inherit; font-size: clamp(1.5rem, 5vw, 2.4rem); font-weight: 600; letter-spacing: -0.01em;
+    overflow-wrap: anywhere; transition: border-color .15s, background-color .15s, color .15s, opacity .2s;
+  }
+  .choice:hover:not(:disabled) { border-color: var(--accent); }
+  .choice.picked { border-color: var(--accent); background: var(--accent); color: var(--accent-text); }
+  .choice:disabled { cursor: default; }
+  .pair.busy .choice:not(.picked) { opacity: 0.45; }
+  .skip {
+    border: 0; background: none; color: var(--muted); font: inherit; cursor: pointer;
+    padding: 10px 16px; text-decoration: underline; text-underline-offset: 4px;
+  }
+  .skip:hover:not(:disabled) { color: var(--text); }
+  .skip:disabled { cursor: default; opacity: 0.5; }
+  .choice:focus-visible, .skip:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  .note { min-height: 1.4em; margin: 0; color: var(--muted); font-size: 0.9rem; text-align: center; }
+  .board { width: 100%; max-width: 760px; margin: 0 auto; padding: 8px 16px 56px; }
+  .board h2 { margin: 0 0 16px; font-size: 1rem; font-weight: 600; color: var(--muted); text-align: center; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .col { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 20px; }
+  .col h3 { margin: 0 0 8px; font-size: 1rem; font-weight: 800; }
+  ol { margin: 0; padding: 0; list-style: none; counter-reset: n; }
+  li { counter-increment: n; display: flex; gap: 12px; padding: 6px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+  li::before { content: counter(n); color: var(--muted); width: 1.2em; flex: none; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) {
+    .pair { flex-direction: column; gap: 10px; }
+    .choice { width: 100%; min-height: 110px; }
+    .cols { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { .choice { transition: none; } }
+</style>
 </head>
 <body>
-  <h1>Participants</h1>
-  <ul id="list"></ul>
-
-  <script>
-    const { createClient } = supabase;
-    const db = createClient(
-      "https://ymygsboxvnavdpjklqpr.supabase.co",
-      "sb_publishable_Bq--EYS7CxPpoR2wnLissg_KiRoLf9n"
-    );
-
-    async function load() {
-      const { data, error } = await db
-        .from("participants")
-        .select("id, name, elo, woman")
-        .order("elo", { ascending: false });
-
-      if (error) { console.error(error); return; }
-
-      document.getElementById("list").innerHTML = data
-        .map(p => `<li>${p.name}: ${p.elo}</li>`)
-        .join("");
+<h1>Årsfest Prolog 2026</h1>
+ 
+<section class="stage">
+  <p class="prompt">Who do you think will win?</p>
+  <div class="pair" id="pair">
+    <button class="choice" id="btnA" disabled>…</button>
+    <span class="vs">vs</span>
+    <button class="choice" id="btnB" disabled>…</button>
+  </div>
+  <button class="skip" id="skip" disabled>I don't know</button>
+  <p class="note" id="note" role="status"></p>
+</section>
+ 
+<section class="board">
+  <h2>Current favourites</h2>
+  <div class="cols">
+    <div class="col"><h3>Women</h3><ol id="topWomen"></ol></div>
+    <div class="col"><h3>Men</h3><ol id="topMen"></ol></div>
+  </div>
+</section>
+ 
+<script>
+  // ---- Fill these in ----
+  const SUPABASE_URL = "https://ymygsboxvnavdpjklqpr.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_Bq--EYS7CxPpoR2wnLissg_KiRoLf9n";
+  // -----------------------
+  
+  const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  const $ = id => document.getElementById(id);
+  const DELAY_MS = 500;
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+ 
+  let pair = null;     // [{id, name}, {id, name}]
+  let busy = false;
+ 
+  function setNote(text) { $("note").textContent = text || ""; }
+ 
+  function showPair(p) {
+    pair = p;
+    $("btnA").textContent = p[0].name;
+    $("btnB").textContent = p[1].name;
+    for (const id of ["btnA", "btnB"]) { $(id).classList.remove("picked"); $(id).disabled = false; }
+    $("skip").disabled = false;
+    $("pair").classList.remove("busy");
+    busy = false;
+  }
+ 
+  async function fetchPair() {
+    const { data, error } = await db.rpc("get_pair");
+    if (error || !data || data.length < 2) throw new Error(error ? error.message : "Not enough participants yet.");
+    return data;
+  }
+ 
+  async function next(winnerId, pickedBtn) {
+    if (busy || !pair) return;
+    busy = true;
+    for (const id of ["btnA", "btnB"]) $(id).disabled = true;
+    $("skip").disabled = true;
+    $("pair").classList.add("busy");
+    if (pickedBtn) pickedBtn.classList.add("picked");
+    setNote("");
+    const [a, b] = pair;
+    try {
+      const submit = winnerId == null
+        ? Promise.resolve({})
+        : db.rpc("submit_guess", { p_a: a.id, p_b: b.id, p_winner: winnerId });
+      const [res, newPair] = await Promise.all([submit, fetchPair(), wait(DELAY_MS)]);
+      if (res.error) setNote("Your guess could not be saved.");
+      showPair(newPair);
+      loadTop();
+    } catch (e) {
+      setNote("Something went wrong: " + e.message);
+      showPair(pair);   // let the user retry with the same pair
     }
-    load();
-  </script>
+  }
+ 
+  $("btnA").addEventListener("click", () => next(pair[0].id, $("btnA")));
+  $("btnB").addEventListener("click", () => next(pair[1].id, $("btnB")));
+  $("skip").addEventListener("click", () => next(null, null));
+ 
+  async function loadTop() {
+    const { data, error } = await db.rpc("get_top");
+    if (error || !data) return;
+    const fill = (id, woman) => {
+      const ol = $(id);
+      ol.replaceChildren(...data.filter(r => r.woman === woman).sort((x, y) => x.pos - y.pos).map(r => {
+        const li = document.createElement("li");
+        li.textContent = r.name;
+        return li;
+      }));
+    };
+    fill("topWomen", true);
+    fill("topMen", false);
+  }
+ 
+  (async () => {
+    try { showPair(await fetchPair()); }
+    catch (e) { setNote("Could not load participants: " + e.message); }
+    loadTop();
+    setInterval(loadTop, 20000);
+  })();
+</script>
 </body>
 </html>
