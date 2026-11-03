@@ -32,6 +32,7 @@
     margin: 0; padding: 28px 16px 0; text-align: center;
     font-size: clamp(1.4rem, 4vw, 2rem); font-weight: 800; letter-spacing: -0.02em;
   }
+  .count { margin: 6px 0 0; text-align: center; color: var(--muted); font-size: 0.9rem; font-variant-numeric: tabular-nums; }
   .stage {
     flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 24px; padding: 32px 16px; min-height: 60vh;
@@ -75,7 +76,7 @@
 </head>
 <body>
 <h1>Årsfest Prolog 2026</h1>
- 
+  <p class="count"><span id="total">–</span> tippningar så här långt</p>
 <section class="stage">
   <p class="prompt">Vem tror du är snabbast?</p>
   <div class="pair" id="pair">
@@ -177,6 +178,9 @@
         return li;
       }));
     }
+
+    const total = await db.rpc("get_total_guesses");
+    if (!total.error && total.data != null) $("total").textContent = Number(total.data).toLocaleString("sv-SE");
   }
  
   (async () => {
