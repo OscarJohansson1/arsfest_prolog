@@ -59,7 +59,7 @@
   .note { min-height: 1.4em; margin: 0; color: var(--muted); font-size: 0.9rem; text-align: center; }
   .board { width: 100%; max-width: 760px; margin: 0 auto; padding: 8px 16px 56px; }
   .board h2 { margin: 0 0 16px; font-size: 1rem; font-weight: 600; color: var(--muted); text-align: center; }
-  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
   .col { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 20px; }
   .col h3 { margin: 0 0 8px; font-size: 1rem; font-weight: 800; }
   ol { margin: 0; padding: 0; list-style: none; counter-reset: n; }
@@ -90,6 +90,7 @@
 <section class="board">
   <h2>Favoriter (Baserat på alla tippningar)</h2>
   <div class="cols">
+    <div class="col"><h3>Alla</h3><ol id="topOverall"></ol></div>
     <div class="col"><h3>Damer</h3><ol id="topWomen"></ol></div>
     <div class="col"><h3>Herrar</h3><ol id="topMen"></ol></div>
   </div>
@@ -167,6 +168,15 @@
     };
     fill("topWomen", true);
     fill("topMen", false);
+    
+    const overall = await db.rpc("get_top_overall");
+    if (!overall.error && overall.data) {
+      $("topOverall").replaceChildren(...overall.data.sort((x, y) => x.pos - y.pos).map(r => {
+        const li = document.createElement("li");
+        li.textContent = r.name;
+        return li;
+      }));
+    }
   }
  
   (async () => {
