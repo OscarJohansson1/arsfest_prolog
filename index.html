@@ -19,13 +19,13 @@
     async function load() {
       const { data, error } = await db
         .from("participants")
-        .select("id, Name, Elo, Gender")
+        .select("id, name, elo, woman")
         .order("Elo", { ascending: false });
 
       if (error) { console.error(error); return; }
 
       document.getElementById("list").innerHTML = data
-        .map(p => `<li>${p.Name}: ${p.Elo}</li>`)
+        .map(p => `<li>${p.name}: ${p.elo}</li>`)
         .join("");
     }
     load();
